@@ -122,6 +122,54 @@ func isNilableKind[T any]() bool {
 	return false
 }
 
+// IsInt reports whether value's dynamic type is any signed or unsigned
+// integer type: int, int8, int16, int32, int64, uint, uint8, uint16,
+// uint32, uint64, or uintptr. Named types with those underlying kinds
+// (e.g. type Port uint16) are not matched — the check is against the
+// exact built-in int types only, via a zero-reflection type switch.
+//
+// Callers who need to include named types should use reflect.TypeOf(v).Kind()
+// directly, or use to.Type[int64](v) to attempt conversion.
+func IsInt(value any) bool {
+	switch value.(type) {
+	case int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64, uintptr:
+		return true
+	}
+	return false
+}
+
+// IsFloat reports whether value's dynamic type is float32 or float64.
+// NaN and ±Inf return true — they are valid float values, not flags.
+// Named types with float underlying kinds are not matched; use
+// reflect.TypeOf(v).Kind() for that.
+func IsFloat(value any) bool {
+	switch value.(type) {
+	case float32, float64:
+		return true
+	}
+	return false
+}
+
+// IsNumeric reports whether value's dynamic type is any numeric type:
+// the union of IsInt, IsFloat, and the complex types (complex64,
+// complex128). It is the runtime counterpart of a "numeric" constraint
+// and is useful when dispatching on the broad category of value kinds.
+//
+// IsNumeric(true) returns false — booleans are not numeric in Go's
+// type system. IsNumeric("42") also returns false; the string form
+// needs parsing via to.Int / to.F64 before it counts as numeric.
+func IsNumeric(value any) bool {
+	switch value.(type) {
+	case int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64, uintptr,
+		float32, float64,
+		complex64, complex128:
+		return true
+	}
+	return false
+}
+
 // IsEmpty reports whether a value is "blank" in the Ruby sense: nil,
 // the zero value of a numeric/boolean type, a whitespace-only string,
 // an empty collection, or a nil pointer.

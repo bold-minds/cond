@@ -214,6 +214,93 @@ func TestIf(t *testing.T) {
 	})
 }
 
+func TestIsInt(t *testing.T) {
+	// Every built-in int type must match.
+	intCases := []any{
+		int(0), int(42), int(-1),
+		int8(0), int16(0), int32(0), int64(0),
+		uint(0), uint8(0), uint16(0), uint32(0), uint64(0),
+		uintptr(0),
+	}
+	for _, v := range intCases {
+		if !cond.IsInt(v) {
+			t.Errorf("IsInt(%T) = false, want true", v)
+		}
+	}
+
+	// Non-int types must not match.
+	nonIntCases := []any{
+		float32(0), float64(0),
+		complex64(0), complex128(0),
+		"42", true, false, nil,
+		[]int{1, 2, 3}, map[string]int{},
+	}
+	for _, v := range nonIntCases {
+		if cond.IsInt(v) {
+			t.Errorf("IsInt(%T) = true, want false", v)
+		}
+	}
+
+	// Named types with int underlying kind must NOT match (documented).
+	type Port uint16
+	if cond.IsInt(Port(8080)) {
+		t.Error("IsInt(Port) matched — named types should fall through")
+	}
+}
+
+func TestIsFloat(t *testing.T) {
+	// Every built-in float type must match, including special values.
+	floatCases := []any{
+		float32(0), float32(3.14), float32(math.Inf(1)),
+		float64(0), float64(3.14), float64(math.Inf(-1)), math.NaN(),
+	}
+	for _, v := range floatCases {
+		if !cond.IsFloat(v) {
+			t.Errorf("IsFloat(%T %v) = false, want true", v, v)
+		}
+	}
+
+	// Integer and non-numeric must not match.
+	for _, v := range []any{int(0), int64(0), uint(0), "3.14", true, nil} {
+		if cond.IsFloat(v) {
+			t.Errorf("IsFloat(%T) = true, want false", v)
+		}
+	}
+}
+
+func TestIsNumeric(t *testing.T) {
+	// Everything int, float, or complex must match.
+	numericCases := []any{
+		int(0), int8(0), int16(0), int32(0), int64(0),
+		uint(0), uint8(0), uint16(0), uint32(0), uint64(0), uintptr(0),
+		float32(0), float64(0),
+		complex64(0), complex128(0),
+		math.NaN(), math.Inf(1),
+	}
+	for _, v := range numericCases {
+		if !cond.IsNumeric(v) {
+			t.Errorf("IsNumeric(%T) = false, want true", v)
+		}
+	}
+
+	// Strings, bools, nil, and collections must not match.
+	nonNumericCases := []any{
+		"42", "3.14", true, false, nil,
+		[]int{}, map[string]int{}, struct{}{},
+	}
+	for _, v := range nonNumericCases {
+		if cond.IsNumeric(v) {
+			t.Errorf("IsNumeric(%T) = true, want false", v)
+		}
+	}
+
+	// Named numeric types fall through (matches IsInt/IsFloat behavior).
+	type Celsius float64
+	if cond.IsNumeric(Celsius(20)) {
+		t.Error("IsNumeric(Celsius) matched — named types should fall through")
+	}
+}
+
 func TestIsEmpty(t *testing.T) {
 	tests := []struct {
 		value    any

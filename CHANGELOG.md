@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-04-05
+
+### Added
+
+- **`IsInt(value any) bool`** — zero-reflection type-switch predicate matching any of the built-in signed and unsigned integer widths (`int`, `int8`..`int64`, `uint`, `uint8`..`uint64`, `uintptr`). Named types with int underlying kinds (e.g. `type Port uint16`) are not matched — callers who need that should use `reflect.TypeOf(v).Kind()` or `to.Type[int64](v)`.
+- **`IsFloat(value any) bool`** — type-switch predicate matching `float32` and `float64`. NaN and ±Inf return true (they are valid float values).
+- **`IsNumeric(value any) bool`** — union of `IsInt`, `IsFloat`, and the complex types (`complex64`, `complex128`). Runtime counterpart of a "numeric" generic constraint. Booleans and numeric strings return false.
+
+Rationale: `Is*` predicates are the shape of `cond`, not `to`. `cond` already hosts `IsEmpty` — a type-inspecting boolean predicate. The new functions are the same shape: ask a yes/no question about the dynamic type of a value. `to` remains the package for producing values via conversion; `cond` is the package for asking questions about them.
+
 ## [0.2.0] — 2026-04-05
 
 ### Changed
