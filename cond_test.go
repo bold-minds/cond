@@ -152,8 +152,9 @@ func TestIf(t *testing.T) {
 		// plain func() T branch is treated as a lazy thunk and called.
 		// Lock the behavior in so it does not drift silently.
 		inner := func() string { return "inner" }
-		// The value we *want* returned as T.
-		var want func() string = inner
+		// The value we *want* returned as T. Type inferred from
+		// `inner` — staticcheck ST1023 flags the redundant annotation.
+		want := inner
 		// Wrapping in a thunk is the only way to pass a function
 		// value as a direct branch when T is itself a function type.
 		thunk := func() func() string { return want }
