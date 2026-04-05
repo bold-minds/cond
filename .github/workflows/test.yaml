@@ -84,7 +84,13 @@ jobs:
           go-version: 'stable'
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        # golangci-lint-action@v7 is required to run golangci-lint v2.
+        # v6 of the action only supports v1 binaries and fails with
+        # "golangci-lint v2 is not supported by golangci-lint-action
+        # v6, you must update to golangci-lint-action v7". The
+        # .golangci.yml in this repo uses the v2 config schema, so
+        # the action version and binary version must be aligned.
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.0.2
           args: --timeout=10m
