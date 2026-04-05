@@ -21,10 +21,10 @@ if cond.IsEmpty(req.Name) {
 ## ✨ Why cond?
 
 - 🎯 **Two functions, crystal clear** — `If[T]` and `IsEmpty`. Nothing else, ever.
-- ⚡ **Zero reflection** — pure type switches; safe for hot paths.
+- ⚡ **Type-switch fast path** — the common cases never touch reflection. Reflect is used only as a fallback for pointer/collection types the switch cannot enumerate, so `IsEmpty` on a typed nil pointer of any type still returns `true` instead of falling into Go's interface-nil trap.
 - 🦥 **Lazy evaluation opt-in** — pass `func() T` as a branch and only the chosen side runs. Eager by default.
-- 🪶 **Zero dependencies** — pure Go stdlib.
-- 💥 **Fail loud on programming errors** — `If[T]` panics on a mistyped branch argument. Silent zero values hide bugs.
+- 🪶 **Zero external dependencies** — pure Go stdlib.
+- 💥 **Fail loud on programming errors** — `If[T]` panics on a mistyped branch argument, with both the actual and expected types in the message. Silent zero values hide bugs.
 
 ## 📦 Installation
 
@@ -75,10 +75,13 @@ Returns `trueVal` if `condition` is true, `falseVal` otherwise. The branch argum
 
 - **Direct value (eager):** `cond.If[string](ok, "yes", "no")` — both values already exist.
 - **`func() T` (lazy):** `cond.If[string](ok, func() string { return expensive() }, "fallback")` — only the chosen branch runs.
+- **Untyped `nil` (for nilable `T`):** `cond.If[*User](ok, nil, u)` — when `T` is a pointer, slice, map, chan, func, or interface type, the untyped `nil` literal is accepted as the zero value of `T`. Passing `nil` to a non-nilable `T` (like `int` or a struct) is a programming error and panics.
 
 You can mix: one branch can be a direct value, the other a `func() T`. Selection happens per-branch.
 
-**Panic contract:** if a branch argument is neither a `T` nor a `func() T`, `If` panics with a message identifying which branch failed (`cond: type assertion failed for trueVal` / `cond: type assertion failed for falseVal`). This is intentional — a mistyped branch is a bug, not a runtime condition to paper over.
+**Panic contract:** if a branch argument is neither a `T`, a `func() T`, nor a valid untyped `nil`, `If` panics with a message naming the offending branch and including both the actual and expected types (`cond: type assertion failed for trueVal: got int, want string or func() string`). This is intentional — a mistyped branch is a bug, not a runtime condition to paper over.
+
+**Edge case — `T` is itself a function type:** if you instantiate `If[func() string]`, the lazy-branch detector will treat a plain `func() string` argument as a thunk and call it, which is almost certainly not what you want. Use a different type alias or wrap the value if you need to pass a function as a direct branch value.
 
 ### `IsEmpty(value any) bool`
 
@@ -87,15 +90,18 @@ Reports whether a value is blank in the Ruby sense. Returns `true` for:
 | Kind | "Empty" when |
 |---|---|
 | `nil` | always |
-| any numeric type | value is `0` |
+| any signed or unsigned integer, `float32`, `float64` | value is `0` |
 | `string` | `strings.TrimSpace(s) == ""` |
 | `bool` | `false` |
-| `[]any`, `[]int`, `[]string` | `len == 0` |
-| `map[string]any`, `map[string]int`, `map[any]any` | `len == 0` |
+| any slice, array, map, or channel | `len == 0` (via reflect fallback for element/key types not in the fast path) |
 | `*string` | nil pointer, or points to an empty string |
-| `*int`, `*float64`, `*bool`, `*any` | nil pointer |
+| any other pointer, interface, func, or chan | the value is nil (including typed nils of user-defined pointer types — via reflect fallback) |
 
-Types not explicitly handled return `false` (treated as present). `IsEmpty` deliberately does not use reflection; if you need presence checks on custom struct types, perform them yourself before calling.
+**Type-switch fast path:** the common concrete types (`string`, every integer/float width, `bool`, `[]any`, `[]int`, `[]string`, `map[string]any`, `map[string]int`, `map[any]any`, `*string`, `*int`, `*float64`, `*bool`, `*any`) hit a zero-reflection type switch. Everything else falls through to a reflect-based check that handles nilable kinds and `Len`-bearing collections.
+
+**Custom structs return `false`.** `IsEmpty` will not introspect fields of user-defined struct types. `IsEmpty(MyConfig{})` is `false`, not `true`. If you want a blank check on a struct, write it yourself.
+
+**NaN is not empty.** `IsEmpty(math.NaN())` returns `false`. A NaN is a present value; it is simply not equal to zero. Check `math.IsNaN` first if you want to treat it as blank.
 
 ## 🧭 When to use `cond.If` vs plain `if`
 

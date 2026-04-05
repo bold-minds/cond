@@ -1,12 +1,23 @@
 // Package cond provides conditional primitives that Go's language
 // intentionally omits: a typed ternary and a zero-value/blank check.
 //
-// Two functions, one file, zero dependencies. This package pairs with
-// the other bold-minds utility libraries (txt, to, dig, each, list,
-// num, kv, dt) but has no dependency on any of them.
+// Two functions, one file, zero external dependencies. This package
+// pairs with the other bold-minds utility libraries (txt, to, dig,
+// each, list, num, kv, dt) but has no dependency on any of them.
+//
+// # Design notes
+//
+// The hot path uses a type switch with no reflection. Reflection is
+// used only as a fallback for kinds the switch cannot enumerate —
+// pointers to arbitrary user types and collections with arbitrary
+// element/key types — and for the nil-branch safety check in If.
+// Code paths that hit the reflect fallback are explicitly documented
+// on the functions below.
 package cond
 
 import (
+	"fmt"
+	"reflect"
 	"strings"
 )
 
@@ -19,40 +30,110 @@ import (
 //   - func() T (lazy — only the chosen branch is evaluated):
 //     If[string](ok, func() string { return expensive() }, "fallback")
 //
-// When a branch argument is neither a T nor a func() T, If panics with
-// a message identifying which branch failed its type assertion. The
-// panic is intentional: a mistyped branch is a programming error, and
-// silently returning the zero value would hide bugs.
+// # Nil branches
+//
+// A branch argument that is the untyped nil literal is treated as the
+// zero value of T, provided T is a nilable kind (pointer, slice, map,
+// channel, func, interface). This makes expressions like
+// If[*string](ok, nil, &s) work as written. If T is not nilable (e.g.
+// int, string, struct), a nil branch is a programming error and If
+// panics with a descriptive message.
+//
+// # func() T ambiguity when T is itself a function type
+//
+// If T is itself a function type (e.g. func() string) the lazy-branch
+// detection treats a func() T argument as a thunk and calls it,
+// expecting a T back. To pass a plain function value as a direct
+// branch of a function-typed T, wrap it so the outer type is not
+// func() T — or use an explicit cast — otherwise the runtime
+// assertion will fail and If will panic.
+//
+// # Panic contract
+//
+// When a branch argument is neither a T, a func() T, nor a valid
+// untyped nil, If panics with a message naming the offending branch
+// and including both the actual and expected types. The panic is
+// intentional: a mistyped branch is a programming error, and silently
+// returning the zero value would hide bugs.
 func If[T any](condition bool, trueVal, falseVal any) T {
 	if condition {
-		if fn, ok := trueVal.(func() T); ok {
-			return fn()
-		}
-		val, ok := trueVal.(T)
-		if !ok {
-			panic("cond: type assertion failed for trueVal")
-		}
-		return val
+		return resolveBranch[T](trueVal, "trueVal")
 	}
-	if fn, ok := falseVal.(func() T); ok {
+	return resolveBranch[T](falseVal, "falseVal")
+}
+
+// resolveBranch extracts a T from a branch argument, handling the
+// eager value, lazy thunk, and untyped-nil cases. It is internal to
+// the If implementation.
+func resolveBranch[T any](val any, which string) T {
+	var zero T
+
+	// Untyped nil branch — valid only when T is a nilable kind.
+	if val == nil {
+		if isNilableKind[T]() {
+			return zero
+		}
+		panic(fmt.Sprintf(
+			"cond: %s is nil, but type %T is not nilable",
+			which, zero,
+		))
+	}
+
+	// Lazy thunk path.
+	if fn, ok := val.(func() T); ok {
 		return fn()
 	}
-	val, ok := falseVal.(T)
-	if !ok {
-		panic("cond: type assertion failed for falseVal")
+
+	// Eager value path.
+	if v, ok := val.(T); ok {
+		return v
 	}
-	return val
+
+	panic(fmt.Sprintf(
+		"cond: type assertion failed for %s: got %T, want %T or func() %T",
+		which, val, zero, zero,
+	))
+}
+
+// isNilableKind reports whether T's zero value may legitimately be
+// expressed as the untyped nil literal. Used by resolveBranch to
+// decide whether a nil branch argument is acceptable.
+func isNilableKind[T any]() bool {
+	var zero T
+	t := reflect.TypeOf(&zero).Elem()
+	switch t.Kind() {
+	case reflect.Ptr, reflect.Slice, reflect.Map,
+		reflect.Chan, reflect.Func, reflect.Interface:
+		return true
+	}
+	return false
 }
 
 // IsEmpty reports whether a value is "blank" in the Ruby sense: nil,
-// the zero value of a numeric/boolean/string type, a whitespace-only
-// string, or an empty collection. It also handles nil pointers and
-// pointers to empty strings.
+// the zero value of a numeric/boolean type, a whitespace-only string,
+// an empty collection, or a nil pointer.
 //
-// The check is type-switch based (no reflection). Types not explicitly
-// handled return false — they are treated as present by default, since
-// IsEmpty cannot meaningfully introspect arbitrary user types without
-// reflection.
+// # Type coverage
+//
+// The common cases are handled by a type switch with no reflection.
+// For types the switch does not enumerate — pointers to arbitrary
+// user types, slices/maps/arrays/channels of arbitrary element types
+// — IsEmpty falls through to a reflect-based check that handles any
+// nilable pointer/interface and any Len-bearing collection. This
+// fallback is intentional: without it, IsEmpty(p) on a typed nil
+// pointer of an unhandled type would hit Go's interface-nil trap and
+// return false, which is the opposite of the function's intent.
+//
+// Unknown value types (custom structs, arrays of non-standard kinds,
+// and similar) still return false — IsEmpty cannot meaningfully
+// introspect user-defined struct fields, and doing so via reflection
+// would invite surprises.
+//
+// # NaN
+//
+// IsEmpty(math.NaN()) returns false. A NaN is a present value; it is
+// simply not equal to zero. Callers who want NaN treated as blank
+// should check with math.IsNaN before calling IsEmpty.
 func IsEmpty(value any) bool {
 	if value == nil {
 		return true
@@ -107,10 +188,31 @@ func IsEmpty(value any) bool {
 		return v == nil
 	case *bool:
 		return v == nil
+	case *any:
+		return v == nil
 	default:
-		if ptr, ok := value.(*any); ok {
-			return ptr == nil
-		}
-		return false
+		return isEmptyReflect(value)
 	}
+}
+
+// isEmptyReflect handles the fall-through case for IsEmpty: any type
+// the type switch does not enumerate. It covers nilable kinds
+// (pointer, interface, chan, func, map, slice) and Len-bearing
+// collections. Everything else returns false.
+//
+// This is the only reflect use on the IsEmpty code path and is only
+// reached for types the explicit type switch cannot match.
+func isEmptyReflect(value any) bool {
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Ptr, reflect.Interface,
+		reflect.Chan, reflect.Func:
+		return rv.IsNil()
+	case reflect.Slice, reflect.Map:
+		// Nil slice/map is zero-length, so IsNil is subsumed by Len.
+		return rv.Len() == 0
+	case reflect.Array:
+		return rv.Len() == 0
+	}
+	return false
 }

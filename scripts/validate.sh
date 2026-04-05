@@ -23,7 +23,11 @@ WARNING_COUNT=0
 START_TIME=$(date +%s)
 
 # 🔧 Configuration
-MODE=${1:-"local"}  # local|ci
+# Mode resolution order: explicit positional arg > $CI env var > "local".
+# So `CI=true ./scripts/validate.sh` implies CI mode without a positional
+# argument, matching the convention used by GitHub Actions and similar.
+MODE=${1:-${CI:+ci}}
+MODE=${MODE:-local}  # local|ci
 COVERAGE_THRESHOLD=${COVERAGE_THRESHOLD:-80}
 TEST_TIMEOUT=${TEST_TIMEOUT:-10m}
 INTEGRATION_TAG=${INTEGRATION_TAG:-integration}
@@ -177,9 +181,13 @@ run_linting() {
 
 # 🏗️ Build validation
 validate_build() {
-    # Clean build
-    print_info "Cleaning build cache..."
-    go clean -cache
+    # Force a clean test run without nuking the machine-wide build cache.
+    # `go clean -cache` deletes the entire build cache for every module on
+    # the host, which is painful on a dev laptop running validate
+    # frequently. `-testcache` is scoped to test results and achieves the
+    # "force re-run" goal without collateral damage.
+    print_info "Clearing test cache..."
+    go clean -testcache
     
     # Build all packages
     if ! go build ./...; then

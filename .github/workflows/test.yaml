@@ -15,6 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
+        go: [ '1.21', 'stable' ]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +25,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: ${{ matrix.go }}
 
       - name: Install dependencies
         run: go mod download
@@ -43,11 +44,47 @@ jobs:
 
       - name: Run tests (Unix)
         if: runner.os != 'Windows'
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
         run: go test -v -coverprofile="coverage.out" ./...
 
+      - name: Enforce coverage floor
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          threshold=80
+          pct=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%","",$3); print $3}')
+          echo "coverage: ${pct}% (floor ${threshold}%)"
+          awk -v p="$pct" -v t="$threshold" 'BEGIN { exit (p+0 < t+0) }'
+
+      - name: Upload coverage artifact
+        if: runner.os != 'Windows' && matrix.go == 'stable'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.os }}
+          path: coverage.out
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Run benchmarks
         run: go test -bench=. -benchmem ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.0.2
+          args: --timeout=10m

@@ -15,11 +15,21 @@ linters:
   settings:
     depguard:
       rules:
+        # Production code: stdlib only. cond is a pure-stdlib leaf library.
         main:
           files:
             - $all
+            - "!$test"
           allow:
             - $gostd
+        # Test files: stdlib plus the package itself (external test package
+        # `cond_test` imports `github.com/bold-minds/cond`).
+        tests:
+          files:
+            - $test
+          allow:
+            - $gostd
+            - github.com/bold-minds/cond
     errcheck:
       check-type-assertions: true
     govet:
