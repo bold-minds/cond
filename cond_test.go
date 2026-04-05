@@ -114,6 +114,55 @@ func TestIf(t *testing.T) {
 		_ = cond.If[int](true, nil, 0)
 	})
 
+	t.Run("typed_nil_thunk_nilable_T", func(t *testing.T) {
+		// A typed-nil func() T survives the untyped-nil check (typed
+		// nil in an interface is not the nil interface). For a
+		// nilable T it should return the zero value, not panic with
+		// a raw Go nil-func call.
+		var nilFn func() *string
+		if got := cond.If[*string](true, nilFn, nil); got != nil {
+			t.Errorf("Expected nil *string from typed-nil thunk, got %v", got)
+		}
+		if got := cond.If[*string](false, nil, nilFn); got != nil {
+			t.Errorf("Expected nil *string from typed-nil thunk, got %v", got)
+		}
+	})
+
+	t.Run("typed_nil_thunk_non_nilable_T_panics", func(t *testing.T) {
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Error("Expected panic when passing typed-nil thunk for non-nilable type int")
+				return
+			}
+			msg := fmt.Sprint(r)
+			if !strings.Contains(msg, "trueVal is a nil func()") {
+				t.Errorf("Expected panic identifying nil thunk, got: %v", r)
+			}
+			if !strings.Contains(msg, "not nilable") {
+				t.Errorf("Expected panic mentioning 'not nilable', got: %v", r)
+			}
+		}()
+		var nilFn func() int
+		_ = cond.If[int](true, nilFn, 0)
+	})
+
+	t.Run("function_typed_T_is_called_as_thunk", func(t *testing.T) {
+		// Documented footgun: when T is itself a function type, a
+		// plain func() T branch is treated as a lazy thunk and called.
+		// Lock the behavior in so it does not drift silently.
+		inner := func() string { return "inner" }
+		// The value we *want* returned as T.
+		var want func() string = inner
+		// Wrapping in a thunk is the only way to pass a function
+		// value as a direct branch when T is itself a function type.
+		thunk := func() func() string { return want }
+		got := cond.If[func() string](true, thunk, nil)
+		if got == nil || got() != "inner" {
+			t.Errorf("Expected thunk to return the inner function, got %T", got)
+		}
+	})
+
 	t.Run("type_assertion_failures", func(t *testing.T) {
 		t.Run("trueVal_panic", func(t *testing.T) {
 			defer func() {
@@ -254,9 +303,12 @@ func TestIsEmpty(t *testing.T) {
 		if !cond.IsEmpty(nilStrPtr) {
 			t.Error("Expected nil string pointer to be empty")
 		}
+		// Pointer semantics are nil-only. A non-nil pointer is a
+		// present value regardless of what it points to; IsEmpty never
+		// dereferences.
 		emptyStr := ""
-		if !cond.IsEmpty(&emptyStr) {
-			t.Error("Expected pointer to empty string to be empty")
+		if cond.IsEmpty(&emptyStr) {
+			t.Error("Expected pointer to empty string to NOT be empty (pointer is present)")
 		}
 		nonEmptyStr := "hello"
 		if cond.IsEmpty(&nonEmptyStr) {
@@ -266,17 +318,44 @@ func TestIsEmpty(t *testing.T) {
 		if !cond.IsEmpty(nilIntPtr) {
 			t.Error("Expected nil int pointer to be empty")
 		}
+		zeroInt := 0
+		if cond.IsEmpty(&zeroInt) {
+			t.Error("Expected *int pointing to zero to NOT be empty (pointer is present)")
+		}
 		var nilFloatPtr *float64
 		if !cond.IsEmpty(nilFloatPtr) {
 			t.Error("Expected nil float64 pointer to be empty")
+		}
+		zeroFloat := 0.0
+		if cond.IsEmpty(&zeroFloat) {
+			t.Error("Expected *float64 pointing to zero to NOT be empty (pointer is present)")
 		}
 		var nilBoolPtr *bool
 		if !cond.IsEmpty(nilBoolPtr) {
 			t.Error("Expected nil bool pointer to be empty")
 		}
+		falseBool := false
+		if cond.IsEmpty(&falseBool) {
+			t.Error("Expected *bool pointing to false to NOT be empty (pointer is present)")
+		}
 		var nilAnyPtr *any
 		if !cond.IsEmpty(nilAnyPtr) {
 			t.Error("Expected nil *any pointer to be empty")
+		}
+	})
+
+	t.Run("float_edge_cases", func(t *testing.T) {
+		// Infinities are present values.
+		if cond.IsEmpty(math.Inf(1)) {
+			t.Error("Expected +Inf to NOT be empty")
+		}
+		if cond.IsEmpty(math.Inf(-1)) {
+			t.Error("Expected -Inf to NOT be empty")
+		}
+		// Negative zero compares equal to zero under IEEE 754, so it
+		// is empty. Lock this in so a future refactor does not drift.
+		if !cond.IsEmpty(math.Copysign(0, -1)) {
+			t.Error("Expected -0.0 to be empty (IEEE: -0.0 == 0.0)")
 		}
 	})
 

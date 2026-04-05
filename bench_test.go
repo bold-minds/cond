@@ -10,15 +10,28 @@ import (
 // If benchmarks
 // =============================================================================
 
+// The eager-evaluation benchmarks deliberately use loop-carried
+// values for the branch arguments. With static literals the Go
+// compiler can hoist the call out of the loop and the numbers become
+// meaningless (and suspiciously alloc-free). Using values derived
+// from the loop variable also surfaces the boxing-to-any cost that
+// real call sites with non-constant branches incur.
+
 func Benchmark_If_EagerEvaluation_True(b *testing.B) {
+	trueVals := []string{"a", "b", "c", "d"}
+	falseVals := []string{"w", "x", "y", "z"}
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = cond.If[string](true, "true_value", "false_value")
+		_ = cond.If[string](true, trueVals[i&3], falseVals[i&3])
 	}
 }
 
 func Benchmark_If_EagerEvaluation_False(b *testing.B) {
+	trueVals := []string{"a", "b", "c", "d"}
+	falseVals := []string{"w", "x", "y", "z"}
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = cond.If[string](false, "true_value", "false_value")
+		_ = cond.If[string](false, trueVals[i&3], falseVals[i&3])
 	}
 }
 

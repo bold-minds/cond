@@ -21,7 +21,7 @@ if cond.IsEmpty(req.Name) {
 ## ✨ Why cond?
 
 - 🎯 **Two functions, crystal clear** — `If[T]` and `IsEmpty`. Nothing else, ever.
-- ⚡ **Type-switch fast path** — the common cases never touch reflection. Reflect is used only as a fallback for pointer/collection types the switch cannot enumerate, so `IsEmpty` on a typed nil pointer of any type still returns `true` instead of falling into Go's interface-nil trap.
+- ⚡ **Type-switch fast path** — the common cases never touch reflection. Reflect is used only as a fallback for pointer/collection types the switch cannot enumerate, so `IsEmpty` on a typed nil pointer of any type still returns `true` instead of falling into Go's interface-nil trap. See [Performance](#-performance) for the boxing cost that comes with `If`'s signature.
 - 🦥 **Lazy evaluation opt-in** — pass `func() T` as a branch and only the chosen side runs. Eager by default.
 - 🪶 **Zero external dependencies** — pure Go stdlib.
 - 💥 **Fail loud on programming errors** — `If[T]` panics on a mistyped branch argument, with both the actual and expected types in the message. Silent zero values hide bugs.
@@ -94,14 +94,21 @@ Reports whether a value is blank in the Ruby sense. Returns `true` for:
 | `string` | `strings.TrimSpace(s) == ""` |
 | `bool` | `false` |
 | any slice, array, map, or channel | `len == 0` (via reflect fallback for element/key types not in the fast path) |
-| `*string` | nil pointer, or points to an empty string |
-| any other pointer, interface, func, or chan | the value is nil (including typed nils of user-defined pointer types — via reflect fallback) |
+| any pointer, interface, func, or chan | the value is nil (including typed nils of user-defined pointer types — via reflect fallback). `IsEmpty` **never dereferences**: `IsEmpty(&"")` and `IsEmpty(&0)` are both `false` because the pointer is present. |
 
 **Type-switch fast path:** the common concrete types (`string`, every integer/float width, `bool`, `[]any`, `[]int`, `[]string`, `map[string]any`, `map[string]int`, `map[any]any`, `*string`, `*int`, `*float64`, `*bool`, `*any`) hit a zero-reflection type switch. Everything else falls through to a reflect-based check that handles nilable kinds and `Len`-bearing collections.
 
 **Custom structs return `false`.** `IsEmpty` will not introspect fields of user-defined struct types. `IsEmpty(MyConfig{})` is `false`, not `true`. If you want a blank check on a struct, write it yourself.
 
-**NaN is not empty.** `IsEmpty(math.NaN())` returns `false`. A NaN is a present value; it is simply not equal to zero. Check `math.IsNaN` first if you want to treat it as blank.
+**NaN is not empty.** `IsEmpty(math.NaN())` returns `false`. A NaN is a present value; it is simply not equal to zero. Check `math.IsNaN` first if you want to treat it as blank. `±Inf` are also present (not empty). `-0.0` is empty — IEEE 754 has `-0.0 == 0.0`.
+
+## ⚡ Performance
+
+`IsEmpty` and `If` both short-circuit to a zero-reflection type switch for the common cases, and both are allocation-free on that path for inputs that don't need boxing.
+
+One thing worth calling out about `If`: its branch arguments are declared as `any` so the same call can accept a direct `T`, a `func() T`, or an untyped `nil`. That means a call site passing a **non-constant primitive** — e.g. `cond.If[string](ok, s1, s2)` where `s1` and `s2` are variables — pays one boxing allocation per non-constant branch to put the value into the `any` parameter. Constant literals are hoisted by the compiler and cost nothing.
+
+For tight inner loops over primitives, a plain `if` is cheaper and clearer. Reach for `cond.If` when the readability win matters more than one alloc per call.
 
 ## 🧭 When to use `cond.If` vs plain `if`
 

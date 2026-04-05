@@ -2,8 +2,8 @@
 // intentionally omits: a typed ternary and a zero-value/blank check.
 //
 // Two functions, one file, zero external dependencies. This package
-// pairs with the other bold-minds utility libraries (txt, to, dig,
-// each, list, num, kv, dt) but has no dependency on any of them.
+// pairs with the other bold-minds utility libraries but has no
+// dependency on any of them.
 //
 // # Design notes
 //
@@ -81,6 +81,19 @@ func resolveBranch[T any](val any, which string) T {
 
 	// Lazy thunk path.
 	if fn, ok := val.(func() T); ok {
+		if fn == nil {
+			// A typed-nil func() T survives the val == nil check above
+			// (typed nil in an interface is not the nil interface).
+			// Treat it exactly like an untyped nil branch: zero value
+			// when T is nilable, panic otherwise.
+			if isNilableKind[T]() {
+				return zero
+			}
+			panic(fmt.Sprintf(
+				"cond: %s is a nil func() %T, and type %T is not nilable",
+				which, zero, zero,
+			))
+		}
 		return fn()
 	}
 
@@ -124,16 +137,26 @@ func isNilableKind[T any]() bool {
 // pointer of an unhandled type would hit Go's interface-nil trap and
 // return false, which is the opposite of the function's intent.
 //
-// Unknown value types (custom structs, arrays of non-standard kinds,
-// and similar) still return false — IsEmpty cannot meaningfully
-// introspect user-defined struct fields, and doing so via reflection
-// would invite surprises.
+// User-defined struct types (other than the reflect-fallback nilable
+// and collection kinds) return false — IsEmpty cannot meaningfully
+// introspect struct fields, and doing so via reflection would invite
+// surprises.
 //
-// # NaN
+// # Pointer semantics
 //
-// IsEmpty(math.NaN()) returns false. A NaN is a present value; it is
-// simply not equal to zero. Callers who want NaN treated as blank
-// should check with math.IsNaN before calling IsEmpty.
+// For any pointer type, IsEmpty(p) is true exactly when p is nil. It
+// never dereferences. In particular, IsEmpty(&"") and IsEmpty(&0)
+// both return false — the pointer is present. This is deliberately
+// symmetric across all pointer element types; callers who want to
+// test the pointee should dereference first: IsEmpty(*p).
+//
+// # Floats: NaN, infinities, and signed zero
+//
+// IsEmpty(math.NaN()) returns false — a NaN is a present value, just
+// not equal to zero. Check math.IsNaN first if you want NaN treated
+// as blank. IsEmpty(math.Inf(+1)) and IsEmpty(math.Inf(-1)) also
+// return false for the same reason. IsEmpty(math.Copysign(0, -1))
+// returns true, because IEEE 754 has -0.0 == 0.0.
 func IsEmpty(value any) bool {
 	if value == nil {
 		return true
@@ -181,7 +204,10 @@ func IsEmpty(value any) bool {
 	case map[any]any:
 		return len(v) == 0
 	case *string:
-		return v == nil || *v == ""
+		// Pointer semantics: nil check only. A non-nil pointer to an
+		// empty string is a present value. Callers who want to test
+		// the pointee should dereference first.
+		return v == nil
 	case *int:
 		return v == nil
 	case *float64:

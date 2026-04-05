@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Breaking:** `IsEmpty` pointer semantics are now symmetric across all
+  pointer element types. `IsEmpty(p)` is true exactly when `p` is nil,
+  for every pointer type — it never dereferences. Previously `*string`
+  alone also returned true for a non-nil pointer to an empty string,
+  which was inconsistent with `*int`, `*bool`, and `*float64`, and
+  undocumented. Callers who want to test the pointee should dereference
+  first: `IsEmpty(*p)`.
+
 ### Fixed
+- `If[T]` no longer panics with a raw Go nil-func call when given a
+  typed-nil `func() T` branch argument. A typed nil in an interface is
+  not the nil interface, so it survives the `val == nil` guard; the
+  lazy-thunk branch now checks `fn == nil` before calling and treats a
+  nil thunk identically to an untyped nil branch — zero value when `T`
+  is nilable, descriptive panic otherwise.
 - `IsEmpty` now correctly reports typed nil pointers of user-defined and
   unlisted types as empty. Previously, `IsEmpty((*MyStruct)(nil))` fell
   through the type switch and returned `false` because of Go's
