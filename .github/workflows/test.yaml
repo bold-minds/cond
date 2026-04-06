@@ -90,7 +90,7 @@ jobs:
         # v6, you must update to golangci-lint-action v7". The
         # .golangci.yml in this repo uses the v2 config schema, so
         # the action version and binary version must be aligned.
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.0.2
           args: --timeout=10m
