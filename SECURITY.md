@@ -2,76 +2,57 @@
 
 ## Supported Versions
 
-We actively support the following versions with security updates:
+Only the **latest released minor version** receives security patches.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.x.x   | :white_check_mark: |
+| latest  | :white_check_mark: |
+| older   | :x:                |
 
 ## Reporting a Vulnerability
 
-We take security vulnerabilities seriously. If you discover a security vulnerability, please follow these steps:
+**Do not open a public GitHub issue for security problems.**
 
-### 1. **Do Not** Create a Public Issue
+### 1. Report Privately
 
-Please do not report security vulnerabilities through public GitHub issues, discussions, or pull requests.
+Report via **[GitHub Security Advisories](https://github.com/bold-minds/cond/security/advisories/new)**. This creates a confidential channel between you and the maintainers.
 
-### 2. Report Privately
+If the Security Advisories flow is unavailable, email **security@bold-minds.com**.
 
-Send an email to **security@boldminds.tech** with the following information:
+### 2. What to Include
 
-- **Subject**: Security Vulnerability in bold-minds/cond
-- **Description**: Detailed description of the vulnerability
-- **Steps to Reproduce**: Clear steps to reproduce the issue
-- **Impact**: Potential impact and severity assessment
-- **Suggested Fix**: If you have ideas for a fix (optional)
+- A description of the issue and its impact
+- Steps to reproduce or a proof-of-concept
+- The version affected
+- Your Go version and OS, if relevant
+- Any suggested mitigation
 
 ### 3. Response Timeline
 
-- **Initial Response**: Within 48 hours
-- **Status Update**: Within 7 days
-- **Resolution**: Varies based on complexity, typically within 30 days
+- **Initial acknowledgement**: within 48 hours
+- **Triage + severity assessment**: within 7 days
+- **Resolution**: varies based on complexity, typically within 30 days
+
+You will be credited in the release notes unless you request otherwise.
 
 ### 4. Disclosure Process
 
-1. We will acknowledge receipt of your vulnerability report
-2. We will investigate and validate the vulnerability
-3. We will develop and test a fix
-4. We will coordinate disclosure timing with you
-5. We will release a security update
-6. We will publicly acknowledge your responsible disclosure (if desired)
-
-## Security Considerations
-
-`cond` is a pure-computation library with a very small attack surface:
-
-- **No network I/O.** `cond` does not make network calls.
-- **No file I/O.** `cond` does not read or write files.
-- **No reflection.** `cond` uses concrete type switches only.
-- **No external dependencies.** `cond` is pure Go stdlib.
-- **No mutation.** `cond` never modifies input values.
-
-### Panic Contract
-
-`If[T]` will **intentionally panic** when a branch argument is neither a `T` nor a `func() T`. This is by design: a mistyped branch is a programming error, and silently returning the zero value would hide bugs. The panic message identifies which branch failed its type assertion (`cond: type assertion failed for trueVal` / `cond: type assertion failed for falseVal`).
-
-Callers wrapping untrusted input should never pass that input directly as a `trueVal`/`falseVal` of type `any` — a hostile caller could exploit the panic as a DoS vector. Validate types at the boundary and only call `If[T]` with known-typed values.
-
-### Known Limitations
-
-- `IsEmpty` cannot introspect arbitrary user-defined types without reflection, and by design does not use reflection. Types not explicitly handled return `false` (treated as present). If you need presence checks on custom structs, perform them yourself before calling `IsEmpty`.
+1. We acknowledge receipt of your vulnerability report
+2. We investigate and validate the vulnerability
+3. We develop and test a fix
+4. We coordinate disclosure timing with you
+5. We release a security update
+6. We publicly acknowledge your responsible disclosure (if desired)
 
 ## Security Updates
 
 Security updates will be:
 
-- Released as patch versions (e.g., 0.1.1)
-- Documented in the CHANGELOG.md
+- Released as patch versions
+- Documented in CHANGELOG.md
 - Announced through GitHub releases
 - Tagged with security labels
 
 ## Acknowledgments
 
 We appreciate responsible disclosure and will acknowledge security researchers who help improve the security of this project.
-
-Thank you for helping keep our project and users safe!
